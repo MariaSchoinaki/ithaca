@@ -408,7 +408,7 @@ def compute_attribution_saliency_maps(text_char,
                                       vocab_char_size,
                                       vocab_word_size,
                                       subregion_loss_kwargs=None):
-  """Compute saliency maps for subregions and dates."""
+  """Compute saliency maps focusing on characters only."""
 
   if subregion_loss_kwargs is None:
     subregion_loss_kwargs = {}
@@ -416,54 +416,56 @@ def compute_attribution_saliency_maps(text_char,
   # Get saliency gradients
   dtype = params['params']['char_embeddings']['embedding'].dtype
   text_char_onehot = jax.nn.one_hot(text_char, vocab_char_size).astype(dtype)
-  text_word_onehot = jax.nn.one_hot(text_word, vocab_word_size).astype(dtype)
+  #text_word_onehot = jax.nn.one_hot(text_word, vocab_word_size).astype(dtype)
   text_char_emb = jnp.matmul(text_char_onehot,
                              params['params']['char_embeddings']['embedding'])
-  text_word_emb = jnp.matmul(text_word_onehot,
-                             params['params']['word_embeddings']['embedding'])
-  gradient_subregion_char, gradient_subregion_word = jax.grad(
-      saliency_loss_subregion, (1, 2))(
+  #text_word_emb = jnp.matmul(text_word_onehot,
+                             #params['params']['word_embeddings']['embedding'])
+  gradient_subregion_char, _ = jax.grad(
+      saliency_loss_subregion, (1))(
           forward,
           text_char_emb,
-          text_word_emb,
+          #text_word_emb,
           padding,
           rng=rng,
           **subregion_loss_kwargs)
-  gradient_date_char, gradient_date_word = jax.grad(saliency_loss_date, (1, 2))(
-      forward, text_char_emb, text_word_emb, padding=padding, rng=rng)
+  gradient_date_char, _ = jax.grad(saliency_loss_date, (1))(
+      forward, text_char_emb, padding=padding, rng=rng)
 
   # Generate saliency maps for subregions
   input_grad_subregion_char = np.multiply(gradient_subregion_char,
                                           text_char_emb)  # grad x input
-  input_grad_subregion_word = np.multiply(gradient_subregion_word,
-                                          text_word_emb)
+  #input_grad_subregion_word = np.multiply(gradient_subregion_word,
+                                          #text_word_emb)
   grad_char = grad_to_saliency_char(
       input_grad_subregion_char,
       text_char_onehot,
       text_len=text_len,
       alphabet=alphabet)
-  grad_word = grad_to_saliency_word(
-      input_grad_subregion_word,
-      text_word_onehot,
-      text_len=text_len,
-      alphabet=alphabet)
-  subregion_saliency = np.clip(grad_char + grad_word, 0, 1)
+  #grad_word = grad_to_saliency_word(
+      #input_grad_subregion_word,
+      #text_word_onehot,
+      #text_len=text_len,
+      #alphabet=alphabet)
+  #subregion_saliency = np.clip(grad_char + grad_word, 0, 1)
 
   # Generate saliency maps for dates
   input_grad_date_char = np.multiply(gradient_date_char,
                                      text_char_emb)  # grad x input
-  input_grad_date_word = np.multiply(gradient_date_word, text_word_emb)
+  #input_grad_date_word = np.multiply(gradient_date_word, text_word_emb)
   grad_char = grad_to_saliency_char(
       input_grad_date_char,
       text_char_onehot,
       text_len=text_len,
       alphabet=alphabet)
-  grad_word = grad_to_saliency_word(
-      input_grad_date_word,
-      text_word_onehot,
-      text_len=text_len,
-      alphabet=alphabet)
-  date_saliency = np.clip(grad_char + grad_word, 0, 1)
+  #grad_word = grad_to_saliency_word(
+      #input_grad_date_word,
+      #text_word_onehot,
+      #text_len=text_len,
+      #alphabet=alphabet)
+
+  date_saliency = np.clip(grad_char, 0, 1)  # Only character-based saliency
+  subregion_saliency = np.clip(grad_char_subregion, 0, 1)  # Only character-based saliency
 
   return date_saliency, subregion_saliency
 
