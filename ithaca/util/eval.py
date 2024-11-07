@@ -643,7 +643,6 @@ def compute_attribution_saliency_maps_intergrated(text_char,
   integrated_gradients_date_char = (text_char_emb - baseline_char_emb) * avg_gradient_date_char
   integrated_gradients_date_word = (text_word_emb - baseline_word_emb) * avg_gradient_date_word
 
-  # Convert to saliency map format for characters and words
   grad_char_subregion = grad_to_saliency_char(
       integrated_gradients_subregion_char,
       text_char_onehot,
@@ -672,9 +671,8 @@ def compute_attribution_saliency_maps_intergrated(text_char,
       alphabet=alphabet
   )
 
-  # Combine character and word saliency maps for subregions and dates
-  subregion_saliency = np.clip(grad_char_subregion + grad_word_subregion, 0, 1)
-  date_saliency = np.clip(grad_char_date + grad_word_date, 0, 1)
+  subregion_saliency = np.clip(grad_char_subregion, 0, 1)
+  date_saliency = np.clip(grad_char_date, 0, 1)
 
   # Return the combined Integrated Gradients saliency maps
   return date_saliency, subregion_saliency
