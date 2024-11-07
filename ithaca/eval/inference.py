@@ -187,14 +187,13 @@ def attribute(text, forward, params, alphabet, vocab_char_size, vocab_word_size,
               region_map) -> AttributionResults:
   """Computes predicted date and geographical region."""
 
-  #Remove test_word
-  (text, _, _, text_char, _, text_len, padding,
+  (text, _, _, text_char, text_word, text_len, padding,
    _) = _prepare_text(text, alphabet)
 
   rng = jax.random.PRNGKey(SEED)
   date_logits, subregion_logits, _, _ = forward(
       text_char=text_char,
-      text_word=None,     #None
+      text_word=text_word,
       rngs={'dropout': rng},
       is_training=False)
 
@@ -211,10 +210,8 @@ def attribute(text, forward, params, alphabet, vocab_char_size, vocab_word_size,
   date_pred_probs = eval_util.softmax(date_logits[0])
 
   # Gradients for saliency maps
-  # Compute attribution saliency maps - focusing on characters only
-  # This adjustment means we will ignore any contribution from word gradients
   date_saliency, subregion_saliency = eval_util.compute_attribution_saliency_maps(
-      text_char, None, text_len, padding, forward, params, rng, alphabet,
+      text_char, text_word, text_len, padding, forward, params, rng, alphabet,
       vocab_char_size, vocab_word_size)
 
   # Skip start of sequence symbol (first char) for text and saliency maps:
