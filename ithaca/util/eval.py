@@ -438,7 +438,7 @@ def compute_attribution_saliency_maps(text_char,
   input_grad_subregion_word = np.multiply(gradient_subregion_word,
                                           text_word_emb)
   grad_char = grad_to_saliency_char(
-      input_grad_subregion_char,
+      gradient_subregion_char,
       text_char_onehot,
       text_len=text_len,
       alphabet=alphabet)
@@ -447,13 +447,14 @@ def compute_attribution_saliency_maps(text_char,
       text_word_onehot,
       text_len=text_len,
       alphabet=alphabet)
+  subregion_saliency = np.clip(grad_char, 0, 1) #isolating chars by remove + grad_word
   
   # Generate saliency maps for dates
   input_grad_date_char = np.multiply(gradient_date_char,
                                      text_char_emb)  # grad x input
   input_grad_date_word = np.multiply(gradient_date_word, text_word_emb)
   grad_char = grad_to_saliency_char(
-      input_grad_date_char,
+      gradient_date_char,
       text_char_onehot,
       text_len=text_len,
       alphabet=alphabet)
@@ -463,10 +464,7 @@ def compute_attribution_saliency_maps(text_char,
       text_len=text_len,
       alphabet=alphabet)
   
-  #subregion_saliency = np.clip(grad_char, 0, 1) #isolating chars by remove + grad_word
-  #date_saliency = np.clip(grad_char, 0, 1) #isolating chars by remove + grad_word
-  subregion_saliency = gradient_x_input(text_char_emb, grad_char) #grading x input
-  date_saliency = gradient_x_input(text_char_emb, grad_char) #grading x input
+  date_saliency = np.clip(grad_char, 0, 1) #isolating chars by remove + grad_word
 
   return date_saliency, subregion_saliency
 
@@ -570,6 +568,6 @@ def gradient_x_input(text_char_emb, gradient_char):
   """Compute gradient × input for character embeddings."""
 
   grad_x_input = np.multiply(gradient_char, text_char_emb)
-  saliency_map = grad_x_input.sum(dim=-1)  # Shape: (batch_size, seq_len)
+  saliency_map = grad_x_input.sum(axis=-1)  # Shape: (batch_size, seq_len)
     
   return saliency_map
