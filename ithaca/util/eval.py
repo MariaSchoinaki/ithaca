@@ -359,7 +359,7 @@ def saliency_loss_subregion(forward,
 
   _, subregion_logits, _, _ = forward(
       text_char_emb=text_char_emb,
-      text_word_emb=None,  # Pass None for text_word_emb
+      text_word_emb=text_word_emb,
       padding=padding,
       rngs={'dropout': rng},
       is_training=False)
@@ -373,7 +373,7 @@ def saliency_loss_date(forward, text_char_emb, text_word_emb, padding, rng):
 
   date_pred, _, _, _ = forward(
       text_char_emb=text_char_emb,
-      text_word_emb=None,  # Pass None for text_word_emb
+      text_word_emb=text_word_emb,
       padding=padding,
       rngs={'dropout': rng},
       is_training=False)
