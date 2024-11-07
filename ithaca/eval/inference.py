@@ -187,13 +187,14 @@ def attribute(text, forward, params, alphabet, vocab_char_size, vocab_word_size,
               region_map) -> AttributionResults:
   """Computes predicted date and geographical region."""
 
-  (text, _, _, text_char, text_word, text_len, padding,
+  #Remove test_word
+  (text, _, _, text_char, _, text_len, padding,
    _) = _prepare_text(text, alphabet)
 
   rng = jax.random.PRNGKey(SEED)
   date_logits, subregion_logits, _, _ = forward(
       text_char=text_char,
-      text_word=text_word,
+      text_word=None,     #None
       rngs={'dropout': rng},
       is_training=False)
 

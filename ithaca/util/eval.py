@@ -351,7 +351,6 @@ def beam_search_batch_1d(forward,
 
 def saliency_loss_subregion(forward,
                             text_char_emb,
-                            text_word_emb,
                             padding,
                             rng,
                             subregion=None):
@@ -359,7 +358,6 @@ def saliency_loss_subregion(forward,
 
   _, subregion_logits, _, _ = forward(
       text_char_emb=text_char_emb,
-      text_word_emb=text_word_emb,
       padding=padding,
       rngs={'dropout': rng},
       is_training=False)
@@ -368,12 +366,12 @@ def saliency_loss_subregion(forward,
   return subregion_logits[0, subregion]
 
 
-def saliency_loss_date(forward, text_char_emb, text_word_emb, padding, rng):
+def saliency_loss_date(forward, text_char_emb, padding, rng):
   """saliency_loss_date."""
 
   date_pred, _, _, _ = forward(
       text_char_emb=text_char_emb,
-      text_word_emb=text_word_emb,
+      #text_word_emb=text_word_emb,
       padding=padding,
       rngs={'dropout': rng},
       is_training=False)
@@ -465,7 +463,7 @@ def compute_attribution_saliency_maps(text_char,
       #alphabet=alphabet)
 
   date_saliency = np.clip(grad_char, 0, 1)  # Only character-based saliency
-  subregion_saliency = np.clip(grad_char_subregion, 0, 1)  # Only character-based saliency
+  subregion_saliency = np.clip(gradient_subregion_char, 0, 1)  # Only character-based saliency
 
   return date_saliency, subregion_saliency
 
