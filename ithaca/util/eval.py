@@ -671,8 +671,8 @@ def compute_attribution_saliency_maps_intergrated(text_char,
       alphabet=alphabet
   )
 
-  subregion_saliency = np.clip(grad_char_subregion, 0, 1)
-  date_saliency = np.clip(grad_char_date, 0, 1)
+  subregion_saliency = normalize_saliency(grad_char_subregion)
+  date_saliency = normalize_saliency(grad_char_date)
 
   # Return the combined Integrated Gradients saliency maps
   return date_saliency, subregion_saliency
@@ -682,3 +682,9 @@ def interpolate_inputs(baseline, input_emb, steps):
     alphas = np.linspace(0, 1, steps)
     interpolated_inputs = [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
     return interpolated_inputs
+
+def normalize_saliency(saliency_map):
+    min_val = np.min(saliency_map)
+    max_val = np.max(saliency_map)
+    normalized_saliency = (saliency_map - min_val) / (max_val - min_val + 1e-10)
+    return normalized_saliency
