@@ -671,8 +671,8 @@ def compute_attribution_saliency_maps_intergrated(text_char,
       alphabet=alphabet
   )
 
-  subregion_saliency = normalize_saliency(grad_char_subregion)
-  date_saliency = normalize_saliency(grad_char_date)
+  subregion_saliency = normalize_saliency(grad_word_subregion)
+  date_saliency = normalize_saliency(grad_word_date)
 
   # Return the combined Integrated Gradients saliency maps
   return date_saliency, subregion_saliency
