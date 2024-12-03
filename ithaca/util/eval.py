@@ -454,17 +454,17 @@ def compute_attribution_saliency_maps(text_char,
                                      text_char_emb)  # grad x input
   input_grad_date_word = np.multiply(gradient_date_word, text_word_emb)
   grad_char = grad_to_saliency_char(
-      gradient_date_char,
+      input_grad_date_char,
       text_char_onehot,
       text_len=text_len,
       alphabet=alphabet)
   grad_word = grad_to_saliency_word(
-      gradient_date_word,
+      input_grad_date_word,
       text_word_onehot,
       text_len=text_len,
       alphabet=alphabet)
   
-  date_saliency = np.clip(grad_word, 0, 1) #isolating chars by remove + grad_word
+  date_saliency = np.clip(grad_char, 0, 1) #isolating chars by remove + grad_word
 
   return date_saliency, subregion_saliency
 
