@@ -591,8 +591,15 @@ def compute_attribution_saliency_maps_intergrated(text_char,
   #baseline_char_emb = jnp.zeros_like(text_char_emb)
   #baseline_word_emb = jnp.zeros_like(text_word_emb)
 
-  centroid_char_emb = compute_centroid(text_char_emb)
-  centroid_word_emb = compute_centroid(text_word_emb)
+  # Compute centroid baselines with proper shapes
+  centroid_char_emb = compute_centroid(
+      embeddings_dataset=text_char_emb,
+      target_shape=text_char_emb.shape,  # Ensure the centroid matches the input shape
+  )
+  centroid_word_emb = compute_centroid(
+      embeddings_dataset=text_word_emb,
+      target_shape=text_word_emb.shape,  # Ensure the centroid matches the input shape
+  )
   baseline_char_emb = jnp.array(centroid_char_emb).astype(dtype)
   baseline_word_emb = jnp.array(centroid_word_emb).astype(dtype)
 
@@ -669,17 +676,26 @@ def compute_attribution_saliency_maps_intergrated(text_char,
   date_saliency = np.clip(grad_char_date + grad_word_date, 0, 1)
   # Return the combined Integrated Gradients saliency maps
   return date_saliency, subregion_saliency
+
 def interpolate_inputs(baseline, input_emb, steps):
     """Generate interpolated inputs from the baseline to the actual input."""
     alphas = np.linspace(0, 1, steps)
     interpolated_inputs = [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
     return interpolated_inputs
 
-def compute_centroid(embeddings_dataset):
+def compute_centroid(embeddings_dataset, target_shape):
     """
-    Compute the centroid (mean) of all embeddings in the dataset.
-    :param embeddings_dataset: A NumPy array of shape (N, d), where N is the
-                                number of embeddings and d is the dimension.
-    :return: The centroid embedding of shape (d,).
+    Compute the centroid (mean) of all embeddings in the dataset and reshape it to match the target shape.
+    
+    :param embeddings_dataset: A NumPy array of shape (N, D), where N is the number of embeddings 
+                               and D is the embedding dimension.
+    :param target_shape: The desired shape for the centroid (e.g., [B, L, D] for input embeddings).
+    :return: The centroid embedding reshaped to the target shape.
     """
-    return np.mean(embeddings_dataset, axis=0)
+    # Compute mean over the first dimension (axis 0)
+    centroid = np.mean(embeddings_dataset, axis=0)  # Shape: [D]
+    
+    # Expand or reshape the centroid to match the target shape
+    reshaped_centroid = np.broadcast_to(centroid, target_shape)  # Shape: [B, L, D]
+    return reshaped_centroid
+
