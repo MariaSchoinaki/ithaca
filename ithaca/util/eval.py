@@ -591,8 +591,8 @@ def compute_attribution_saliency_maps_intergrated(text_char,
   baseline_char_emb = jnp.zeros_like(text_char_emb)
   baseline_word_emb = jnp.zeros_like(text_word_emb)
   # Generate interpolated inputs between baseline and actual input for both characters and words
-  interpolated_char_inputs = interpolate_inputs(baseline_char_emb, text_char_emb, 50)
-  interpolated_word_inputs = interpolate_inputs(baseline_word_emb, text_word_emb, 50)
+  interpolated_char_inputs = interpolate_inputs(baseline_char_emb, text_char_emb, 3)
+  interpolated_word_inputs = interpolate_inputs(baseline_word_emb, text_word_emb, 3)
   # Initialize gradient accumulators for subregion and date saliency maps
   accumulated_gradient_subregion_char = jnp.zeros_like(text_char_emb)
   accumulated_gradient_subregion_word = jnp.zeros_like(text_word_emb)
@@ -624,10 +624,10 @@ def compute_attribution_saliency_maps_intergrated(text_char,
       accumulated_gradient_date_char += gradient_date_char
       accumulated_gradient_date_word += gradient_date_word
   # Average the accumulated gradients over all steps
-  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 50
-  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 50
-  avg_gradient_date_char = accumulated_gradient_date_char / 50
-  avg_gradient_date_word = accumulated_gradient_date_word / 50
+  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 3
+  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 3
+  avg_gradient_date_char = accumulated_gradient_date_char / 3
+  avg_gradient_date_word = accumulated_gradient_date_word / 3
   # Compute Integrated Gradients for both characters and words
   integrated_gradients_subregion_char = (text_char_emb - baseline_char_emb) * avg_gradient_subregion_char
   integrated_gradients_subregion_word = (text_word_emb - baseline_word_emb) * avg_gradient_subregion_word
@@ -672,80 +672,72 @@ def interpolate_inputs(baseline, input_emb, steps):
 from lime.lime_text import LimeTextExplainer
 import numpy as np
 
-def compute_attribution_saliency_maps_lime(text_char,
-                                           text_word,
-                                           text_len,
-                                           padding,
-                                           forward,
-                                           params,
-                                           rng,
-                                           alphabet,
-                                           vocab_char_size,
-                                           vocab_word_size,
-                                           subregion_loss_kwargs=None):
-    """
-    Compute character-based saliency maps for subregions and dates using LIME.
-    """
-    if subregion_loss_kwargs is None:
-        subregion_loss_kwargs = {}
+from lime.lime_text import LimeTextExplainer
+import numpy as np
 
-    # Convert input character and word embeddings to text
-    input_text = idx_to_text(text_char[0], alphabet, strip_sos=False, strip_pad=True)
-    print(f"Original Text: {input_text}")
+def compute_lime_explanations(text, forward, params, alphabet, vocab_char_size, vocab_word_size):
+    """
+    Compute LIME explanations for the model's predictions.
+    
+    Args:
+        text (str): Input text to be explained.
+        forward (function): Forward function for the model.
+        params (dict): Model parameters.
+        alphabet: Alphabet instance for text processing.
+        vocab_char_size (int): Vocabulary size for characters.
+        vocab_word_size (int): Vocabulary size for words.
 
-    # Function to predict on perturbed inputs
-    def predict_function(texts):
-        """
-        This function predicts probabilities for perturbed inputs.
-        Perturbed inputs (texts) are converted to embeddings for predictions.
-        """
-        # Convert texts back to embeddings
+    Returns:
+        dict: LIME explanations including feature importance and perturbed text.
+    """
+    # Initialize LIME Text Explainer
+    explainer = LimeTextExplainer(class_names=["Subregion", "Date"])
+
+    def predict_proba(texts):
+        """Wrapper to predict probabilities for LIME."""
+        # Convert each text to character and word embeddings
         predictions = []
-        for text in texts:
-            text_char = text_to_idx(text, alphabet).reshape(1, -1)
-            text_word = text_to_word_idx(text, alphabet).reshape(1, -1)
-            padding = jnp.where(text_char > 0, 1, 0)
+        for t in texts:
+            # Text processing
+            text_char = text_to_idx(t, alphabet).reshape(1, -1)
+            text_word = text_to_word_idx(t, alphabet).reshape(1, -1)
+            padding = np.where(text_char > 0, 1, 0)
             
-            # Forward pass to get logits
-            date_pred, _, _, _ = forward(
+            # Get model predictions using the forward function
+            logits = forward(
                 text_char=text_char,
                 text_word=text_word,
                 text_char_onehot=None,
                 text_word_onehot=None,
-                rngs={'dropout': rng},
-                is_training=False
+                params=params,
+                rngs={'dropout': None},
+                is_training=False,
             )
-            # Assume single-class output, take softmax probabilities
-            prob = jax.nn.softmax(date_pred[0])
-            predictions.append(prob)  # Append predictions
-        return np.array(predictions)
+            # Assuming subregion logits and date logits are separate
+            date_logits = logits[0]
+            subregion_logits = logits[1]
+            
+            # Softmax to get probabilities
+            date_probs = softmax(np.array(date_logits))
+            subregion_probs = softmax(np.array(subregion_logits))
+            
+            # Combine probabilities for LIME (date and subregion)
+            combined_probs = np.concatenate([subregion_probs, date_probs], axis=-1)
+            predictions.append(combined_probs.flatten())
+        
+        return np.vstack(predictions)
 
-    # Initialize LIME explainer
-    explainer = LimeTextExplainer(class_names=["Subregion", "Date"])
-
-    # Generate explanation for the input text
-    print("Generating LIME explanations...")
-    explanation = explainer.explain_instance(
-        input_text,
-        predict_function,
-        num_features=10,  # Top contributing features
-        num_samples=500  # Perturbation samples
+    # Generate LIME explanations for the text
+    exp = explainer.explain_instance(
+        text, predict_proba, num_features=10, labels=[0, 1]  # Adjust the number of features as needed
     )
-
-    # Extract feature contributions
-    lime_saliency = np.zeros(len(input_text))
-    for word, importance in explanation.as_map()[1]:
-        idx = input_text.find(word)  # Locate the word's position in text
-        if idx != -1:
-            for i in range(len(word)):
-                lime_saliency[idx + i] = importance
-
-    # Normalize LIME saliency map
-    lime_saliency = np.clip(lime_saliency, 0, 1)
     
-    # Combine character-based saliency and return
-    subregion_saliency = lime_saliency
-    date_saliency = lime_saliency  # Use the same LIME saliency for both as a placeholder
-
-    print("LIME explanation complete.")
-    return date_saliency, subregion_saliency
+    # Extract LIME explanations
+    explanations = {
+        "features": exp.as_list(label=0),  # For Subregion prediction
+        "visualization": exp.as_pyplot_figure(label=0),  # Plot for Subregion
+        "date_features": exp.as_list(label=1),  # For Date prediction
+        "date_visualization": exp.as_pyplot_figure(label=1),  # Plot for Date
+    }
+    
+    return explanations
