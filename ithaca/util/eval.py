@@ -669,18 +669,18 @@ def interpolate_inputs(baseline, input_emb, steps):
     interpolated_inputs = [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
     return interpolated_inputs
 
-def compute_attribution_saliency_maps_integrated_two_steps(text_char,
-                                                           text_word,
-                                                           text_len,
-                                                           padding,
-                                                           forward,
-                                                           params,
-                                                           rng,
-                                                           alphabet,
-                                                           vocab_char_size,
-                                                           vocab_word_size,
-                                                           subregion_loss_kwargs=None):
-    """Compute character-based saliency maps for subregions and dates using 2-step Integrated Gradients."""
+def compute_attribution_saliency_maps_integrated_three_steps(text_char,
+                                                             text_word,
+                                                             text_len,
+                                                             padding,
+                                                             forward,
+                                                             params,
+                                                             rng,
+                                                             alphabet,
+                                                             vocab_char_size,
+                                                             vocab_word_size,
+                                                             subregion_loss_kwargs=None):
+    """Compute character-based saliency maps for subregions and dates using 3-step Integrated Gradients."""
     if subregion_loss_kwargs is None:
         subregion_loss_kwargs = {}
 
@@ -695,8 +695,8 @@ def compute_attribution_saliency_maps_integrated_two_steps(text_char,
     baseline_char_emb = jnp.zeros_like(text_char_emb)
     baseline_word_emb = jnp.zeros_like(text_word_emb)
 
-    # Interpolated points: baseline, midpoint, input
-    alphas = [0.0, 0.5, 1.0]  # 2 steps: midpoint between baseline and input
+    # Interpolated points: baseline, 0.33, 0.67, input
+    alphas = [0.0, 0.33, 0.67, 1.0]  # 3 steps: two midpoints and the input
     interpolated_char_inputs = [(1 - alpha) * baseline_char_emb + alpha * text_char_emb for alpha in alphas]
     interpolated_word_inputs = [(1 - alpha) * baseline_word_emb + alpha * text_word_emb for alpha in alphas]
 
@@ -724,7 +724,7 @@ def compute_attribution_saliency_maps_integrated_two_steps(text_char,
         accumulated_gradient_date_char += gradient_date_char
         accumulated_gradient_date_word += gradient_date_word
 
-    # Average gradients over the 2 steps
+    # Average gradients over the 3 steps
     avg_gradient_subregion_char = accumulated_gradient_subregion_char / len(alphas)
     avg_gradient_subregion_word = accumulated_gradient_subregion_word / len(alphas)
     avg_gradient_date_char = accumulated_gradient_date_char / len(alphas)
@@ -768,3 +768,4 @@ def compute_attribution_saliency_maps_integrated_two_steps(text_char,
 
     # Return the combined Integrated Gradients saliency maps
     return date_saliency, subregion_saliency
+
