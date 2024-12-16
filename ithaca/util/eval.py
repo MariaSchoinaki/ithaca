@@ -669,83 +669,83 @@ def interpolate_inputs(baseline, input_emb, steps):
     interpolated_inputs = [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
     return interpolated_inputs
 
-def compute_attribution_saliency_maps_integrated_one_step(text_char,
-                                                          text_word,
-                                                          text_len,
-                                                          padding,
-                                                          forward,
-                                                          params,
-                                                          rng,
-                                                          alphabet,
-                                                          vocab_char_size,
-                                                          vocab_word_size,
-                                                          subregion_loss_kwargs=None):
-    """Compute character-based saliency maps for subregions and dates using 1-step Integrated Gradients."""
+from lime.lime_text import LimeTextExplainer
+import numpy as np
+
+def compute_attribution_saliency_maps_lime(text_char,
+                                           text_word,
+                                           text_len,
+                                           padding,
+                                           forward,
+                                           params,
+                                           rng,
+                                           alphabet,
+                                           vocab_char_size,
+                                           vocab_word_size,
+                                           subregion_loss_kwargs=None):
+    """
+    Compute character-based saliency maps for subregions and dates using LIME.
+    """
     if subregion_loss_kwargs is None:
         subregion_loss_kwargs = {}
 
-    # Get saliency gradients
-    dtype = params['params']['char_embeddings']['embedding'].dtype
-    text_char_onehot = jax.nn.one_hot(text_char, vocab_char_size).astype(dtype)
-    text_word_onehot = jax.nn.one_hot(text_word, vocab_word_size).astype(dtype)
-    text_char_emb = jnp.matmul(text_char_onehot, params['params']['char_embeddings']['embedding'])
-    text_word_emb = jnp.matmul(text_word_onehot, params['params']['word_embeddings']['embedding'])
+    # Convert input character and word embeddings to text
+    input_text = idx_to_text(text_char[0], alphabet, strip_sos=False, strip_pad=True)
+    print(f"Original Text: {input_text}")
+
+    # Function to predict on perturbed inputs
+    def predict_function(texts):
+        """
+        This function predicts probabilities for perturbed inputs.
+        Perturbed inputs (texts) are converted to embeddings for predictions.
+        """
+        # Convert texts back to embeddings
+        predictions = []
+        for text in texts:
+            text_char = text_to_idx(text, alphabet).reshape(1, -1)
+            text_word = text_to_word_idx(text, alphabet).reshape(1, -1)
+            padding = jnp.where(text_char > 0, 1, 0)
+            
+            # Forward pass to get logits
+            date_pred, _, _, _ = forward(
+                text_char=text_char,
+                text_word=text_word,
+                text_char_onehot=None,
+                text_word_onehot=None,
+                rngs={'dropout': rng},
+                is_training=False
+            )
+            # Assume single-class output, take softmax probabilities
+            prob = jax.nn.softmax(date_pred[0])
+            predictions.append(prob)  # Append predictions
+        return np.array(predictions)
+
+    # Initialize LIME explainer
+    explainer = LimeTextExplainer(class_names=["Subregion", "Date"])
+
+    # Generate explanation for the input text
+    print("Generating LIME explanations...")
+    explanation = explainer.explain_instance(
+        input_text,
+        predict_function,
+        num_features=10,  # Top contributing features
+        num_samples=500  # Perturbation samples
+    )
+
+    # Extract feature contributions
+    lime_saliency = np.zeros(len(input_text))
+    for word, importance in explanation.as_map()[1]:
+        idx = input_text.find(word)  # Locate the word's position in text
+        if idx != -1:
+            for i in range(len(word)):
+                lime_saliency[idx + i] = importance
+
+    # Normalize LIME saliency map
+    lime_saliency = np.clip(lime_saliency, 0, 1)
     
-    # Baselines: zero embeddings for characters and words
-    baseline_char_emb = jnp.zeros_like(text_char_emb)
-    baseline_word_emb = jnp.zeros_like(text_word_emb)
+    # Combine character-based saliency and return
+    subregion_saliency = lime_saliency
+    date_saliency = lime_saliency  # Use the same LIME saliency for both as a placeholder
 
-    # Midpoint interpolation (α = 0.5)
-    interpolated_char_emb = 0.5 * baseline_char_emb + 0.5 * text_char_emb
-    interpolated_word_emb = 0.5 * baseline_word_emb + 0.5 * text_word_emb
-
-    # Compute gradients at the midpoint
-    gradient_subregion_char, gradient_subregion_word = jax.grad(
-        saliency_loss_subregion, (1, 2))(
-            forward, interpolated_char_emb, interpolated_word_emb, padding, rng=rng, **subregion_loss_kwargs
-    )
-    gradient_date_char, gradient_date_word = jax.grad(
-        saliency_loss_date, (1, 2))(
-            forward, interpolated_char_emb, interpolated_word_emb, padding=padding, rng=rng
-    )
-
-    # Compute Integrated Gradients for both characters and words
-    integrated_gradients_subregion_char = (text_char_emb - baseline_char_emb) * gradient_subregion_char
-    integrated_gradients_subregion_word = (text_word_emb - baseline_word_emb) * gradient_subregion_word
-    integrated_gradients_date_char = (text_char_emb - baseline_char_emb) * gradient_date_char
-    integrated_gradients_date_word = (text_word_emb - baseline_word_emb) * gradient_date_word
-
-    # Convert to saliency map format for characters and words
-    grad_char_subregion = grad_to_saliency_char(
-        integrated_gradients_subregion_char,
-        text_char_onehot,
-        text_len=text_len,
-        alphabet=alphabet
-    )
-    grad_word_subregion = grad_to_saliency_word(
-        integrated_gradients_subregion_word,
-        text_word_onehot,
-        text_len=text_len,
-        alphabet=alphabet
-    )
-    grad_char_date = grad_to_saliency_char(
-        integrated_gradients_date_char,
-        text_char_onehot,
-        text_len=text_len,
-        alphabet=alphabet
-    )
-    grad_word_date = grad_to_saliency_word(
-        integrated_gradients_date_word,
-        text_word_onehot,
-        text_len=text_len,
-        alphabet=alphabet
-    )
-
-    # Combine character and word saliency maps for subregions and dates
-    subregion_saliency = np.clip(grad_char_subregion + grad_word_subregion, 0, 1)
-    date_saliency = np.clip(grad_char_date + grad_word_date, 0, 1)
-
-    # Return the combined Integrated Gradients saliency maps
+    print("LIME explanation complete.")
     return date_saliency, subregion_saliency
-
-
