@@ -591,8 +591,8 @@ def compute_attribution_saliency_maps_intergrated(text_char,
   baseline_char_emb = jnp.zeros_like(text_char_emb)
   baseline_word_emb = jnp.zeros_like(text_word_emb)
   # Generate interpolated inputs between baseline and actual input for both characters and words
-  interpolated_char_inputs = interpolate_inputs(baseline_char_emb, text_char_emb, 50)
-  interpolated_word_inputs = interpolate_inputs(baseline_word_emb, text_word_emb, 50)
+  interpolated_char_inputs = interpolate_inputs(baseline_char_emb, text_char_emb, 2)
+  interpolated_word_inputs = interpolate_inputs(baseline_word_emb, text_word_emb, 2)
   # Initialize gradient accumulators for subregion and date saliency maps
   accumulated_gradient_subregion_char = jnp.zeros_like(text_char_emb)
   accumulated_gradient_subregion_word = jnp.zeros_like(text_word_emb)
@@ -624,10 +624,10 @@ def compute_attribution_saliency_maps_intergrated(text_char,
       accumulated_gradient_date_char += gradient_date_char
       accumulated_gradient_date_word += gradient_date_word
   # Average the accumulated gradients over all steps
-  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 50
-  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 50
-  avg_gradient_date_char = accumulated_gradient_date_char / 50
-  avg_gradient_date_word = accumulated_gradient_date_word / 50
+  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 2
+  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 2
+  avg_gradient_date_char = accumulated_gradient_date_char / 2
+  avg_gradient_date_word = accumulated_gradient_date_word / 2
   # Compute Integrated Gradients for both characters and words
   integrated_gradients_subregion_char = (text_char_emb - baseline_char_emb) * avg_gradient_subregion_char
   integrated_gradients_subregion_word = (text_word_emb - baseline_word_emb) * avg_gradient_subregion_word
@@ -659,8 +659,8 @@ def compute_attribution_saliency_maps_intergrated(text_char,
       alphabet=alphabet
   )
   # Combine character and word saliency maps for subregions and dates
-  subregion_saliency = grad_char_subregion + grad_word_subregion
-  date_saliency = grad_char_date + grad_word_date
+  subregion_saliency = np.clip(grad_char_subregion + grad_word_subregion, 0, 1)
+  date_saliency = np.clip(grad_char_date + grad_word_date, 0, 1)
   # Return the combined Integrated Gradients saliency maps
   return date_saliency, subregion_saliency
 def interpolate_inputs(baseline, input_emb, steps):
