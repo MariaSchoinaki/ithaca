@@ -669,11 +669,102 @@ def interpolate_inputs(baseline, input_emb, steps):
     interpolated_inputs = [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
     return interpolated_inputs
 
-def compute_centroid(embeddings_dataset):
-    """
-    Compute the centroid (mean) of all embeddings in the dataset.
-    :param embeddings_dataset: A NumPy array of shape (N, d), where N is the
-                                number of embeddings and d is the dimension.
-    :return: The centroid embedding of shape (d,).
-    """
-    return np.mean(embeddings_dataset, axis=0)
+def compute_attribution_saliency_maps_integrated_two_steps(text_char,
+                                                           text_word,
+                                                           text_len,
+                                                           padding,
+                                                           forward,
+                                                           params,
+                                                           rng,
+                                                           alphabet,
+                                                           vocab_char_size,
+                                                           vocab_word_size,
+                                                           subregion_loss_kwargs=None):
+    """Compute character-based saliency maps for subregions and dates using 2-step Integrated Gradients."""
+    if subregion_loss_kwargs is None:
+        subregion_loss_kwargs = {}
+
+    # Get saliency gradients
+    dtype = params['params']['char_embeddings']['embedding'].dtype
+    text_char_onehot = jax.nn.one_hot(text_char, vocab_char_size).astype(dtype)
+    text_word_onehot = jax.nn.one_hot(text_word, vocab_word_size).astype(dtype)
+    text_char_emb = jnp.matmul(text_char_onehot, params['params']['char_embeddings']['embedding'])
+    text_word_emb = jnp.matmul(text_word_onehot, params['params']['word_embeddings']['embedding'])
+    
+    # Baselines: zero embeddings for characters and words
+    baseline_char_emb = jnp.zeros_like(text_char_emb)
+    baseline_word_emb = jnp.zeros_like(text_word_emb)
+
+    # Interpolated points: baseline, midpoint, input
+    alphas = [0.0, 0.5, 1.0]  # 2 steps: midpoint between baseline and input
+    interpolated_char_inputs = [(1 - alpha) * baseline_char_emb + alpha * text_char_emb for alpha in alphas]
+    interpolated_word_inputs = [(1 - alpha) * baseline_word_emb + alpha * text_word_emb for alpha in alphas]
+
+    # Initialize gradient accumulators for subregion and date saliency maps
+    accumulated_gradient_subregion_char = jnp.zeros_like(text_char_emb)
+    accumulated_gradient_subregion_word = jnp.zeros_like(text_word_emb)
+    accumulated_gradient_date_char = jnp.zeros_like(text_char_emb)
+    accumulated_gradient_date_word = jnp.zeros_like(text_word_emb)
+
+    # Compute gradients at interpolated points and accumulate
+    for scaled_char_emb, scaled_word_emb in zip(interpolated_char_inputs, interpolated_word_inputs):
+        # Compute gradients for subregion loss
+        gradient_subregion_char, gradient_subregion_word = jax.grad(
+            saliency_loss_subregion, (1, 2))(
+                forward, scaled_char_emb, scaled_word_emb, padding, rng=rng, **subregion_loss_kwargs
+        )
+        # Compute gradients for date loss
+        gradient_date_char, gradient_date_word = jax.grad(
+            saliency_loss_date, (1, 2))(
+                forward, scaled_char_emb, scaled_word_emb, padding=padding, rng=rng
+        )
+        # Accumulate gradients
+        accumulated_gradient_subregion_char += gradient_subregion_char
+        accumulated_gradient_subregion_word += gradient_subregion_word
+        accumulated_gradient_date_char += gradient_date_char
+        accumulated_gradient_date_word += gradient_date_word
+
+    # Average gradients over the 2 steps
+    avg_gradient_subregion_char = accumulated_gradient_subregion_char / len(alphas)
+    avg_gradient_subregion_word = accumulated_gradient_subregion_word / len(alphas)
+    avg_gradient_date_char = accumulated_gradient_date_char / len(alphas)
+    avg_gradient_date_word = accumulated_gradient_date_word / len(alphas)
+
+    # Compute Integrated Gradients for both characters and words
+    integrated_gradients_subregion_char = (text_char_emb - baseline_char_emb) * avg_gradient_subregion_char
+    integrated_gradients_subregion_word = (text_word_emb - baseline_word_emb) * avg_gradient_subregion_word
+    integrated_gradients_date_char = (text_char_emb - baseline_char_emb) * avg_gradient_date_char
+    integrated_gradients_date_word = (text_word_emb - baseline_word_emb) * avg_gradient_date_word
+
+    # Convert to saliency map format for characters and words
+    grad_char_subregion = grad_to_saliency_char(
+        integrated_gradients_subregion_char,
+        text_char_onehot,
+        text_len=text_len,
+        alphabet=alphabet
+    )
+    grad_word_subregion = grad_to_saliency_word(
+        integrated_gradients_subregion_word,
+        text_word_onehot,
+        text_len=text_len,
+        alphabet=alphabet
+    )
+    grad_char_date = grad_to_saliency_char(
+        integrated_gradients_date_char,
+        text_char_onehot,
+        text_len=text_len,
+        alphabet=alphabet
+    )
+    grad_word_date = grad_to_saliency_word(
+        integrated_gradients_date_word,
+        text_word_onehot,
+        text_len=text_len,
+        alphabet=alphabet
+    )
+
+    # Combine character and word saliency maps for subregions and dates
+    subregion_saliency = np.clip(grad_char_subregion + grad_word_subregion, 0, 1)
+    date_saliency = np.clip(grad_char_date + grad_word_date, 0, 1)
+
+    # Return the combined Integrated Gradients saliency maps
+    return date_saliency, subregion_saliency
