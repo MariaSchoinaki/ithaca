@@ -591,8 +591,8 @@ def compute_attribution_saliency_maps_intergrated(text_char,
   baseline_char_emb = jnp.zeros_like(text_char_emb)
   baseline_word_emb = jnp.zeros_like(text_word_emb)
   # Generate interpolated inputs between baseline and actual input for both characters and words
-  interpolated_char_inputs = interpolate_inputs(baseline_char_emb, text_char_emb, 3)
-  interpolated_word_inputs = interpolate_inputs(baseline_word_emb, text_word_emb, 3)
+  interpolated_char_inputs = interpolate_inputs(baseline_char_emb, text_char_emb, 4)
+  interpolated_word_inputs = interpolate_inputs(baseline_word_emb, text_word_emb, 4)
   # Initialize gradient accumulators for subregion and date saliency maps
   accumulated_gradient_subregion_char = jnp.zeros_like(text_char_emb)
   accumulated_gradient_subregion_word = jnp.zeros_like(text_word_emb)
@@ -624,10 +624,10 @@ def compute_attribution_saliency_maps_intergrated(text_char,
       accumulated_gradient_date_char += gradient_date_char
       accumulated_gradient_date_word += gradient_date_word
   # Average the accumulated gradients over all steps
-  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 3
-  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 3
-  avg_gradient_date_char = accumulated_gradient_date_char / 3
-  avg_gradient_date_word = accumulated_gradient_date_word / 3
+  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 4
+  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 4
+  avg_gradient_date_char = accumulated_gradient_date_char / 4
+  avg_gradient_date_word = accumulated_gradient_date_word / 4
   # Compute Integrated Gradients for both characters and words
   integrated_gradients_subregion_char = (text_char_emb - baseline_char_emb) * avg_gradient_subregion_char
   integrated_gradients_subregion_word = (text_word_emb - baseline_word_emb) * avg_gradient_subregion_word
@@ -668,9 +668,6 @@ def interpolate_inputs(baseline, input_emb, steps):
     alphas = np.linspace(0, 1, steps)
     interpolated_inputs = [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
     return interpolated_inputs
-
-from lime.lime_text import LimeTextExplainer
-import numpy as np
 
 from lime.lime_text import LimeTextExplainer
 import numpy as np
