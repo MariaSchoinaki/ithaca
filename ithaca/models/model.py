@@ -69,7 +69,8 @@ class Model(nn.Module):
                text_char_emb=None,
                text_word_emb=None,
                padding=None,
-               is_training=True):
+               is_training=True,
+               return_embeddings=False):
     """Applies Ithaca model on the inputs."""
 
     if text_char is not None and padding is None:
@@ -140,23 +141,24 @@ class Model(nn.Module):
 
     for lyr in range(self.num_layers):
       x = model_block(
-          qkv_dim=self.qkv_dim,
-          mlp_dim=self.mlp_dim,
-          num_heads=self.num_heads,
-          dtype=dtype,
-          causal_mask=self.causal_mask,
-          dropout_rate=self.dropout_rate,
-          attention_dropout_rate=self.attention_dropout_rate,
-          deterministic=not is_training,
-          activation_fn=self.activation_fn,
-          connectivity_seed=lyr,
-          name=f'encoderblock_{lyr}',
+        qkv_dim=self.qkv_dim,
+        mlp_dim=self.mlp_dim,
+        num_heads=self.num_heads,
+        dtype=dtype,
+        causal_mask=self.causal_mask,
+        dropout_rate=self.dropout_rate,
+        attention_dropout_rate=self.attention_dropout_rate,
+        deterministic=not is_training,
+        activation_fn=self.activation_fn,
+        connectivity_seed=lyr,
+        name=f'encoderblock_{lyr}',
       )(
-          x,
-          padding_mask=padding_mask,
+        x,
+        padding_mask=padding_mask,
       )
     x = common_layers.LayerNorm(dtype=dtype, name='encoder_norm')(x)
-    torso_output = x
+    torso_output = x  # Save intermediate embeddings
+
 
     # Bert logits
     if self.use_output_mlp:
@@ -237,7 +239,22 @@ class Model(nn.Module):
       logits_subregion = nn.Dense(self.output_subregions)(x)
 
     outputs = (pred_date, logits_subregion, logits_mask, logits_nsp)
-    if self.output_return_emb:
-      return outputs, torso_output
+    
+    # If return_embeddings is True, return both outputs and torso_output
+    if return_embeddings:
+        return outputs, torso_output
     else:
-      return outputs
+        return outputs
+    
+def forward_fn_with_embeddings(text_char, text_word, rngs, is_training):
+    """
+    Wrapper for the model's forward pass to return both logits and embeddings.
+    """
+    logits, embeddings = Model(
+        text_char=text_char,
+        text_word=text_word,
+        rngs=rngs,
+        is_training=is_training,
+        return_embeddings=True  # Ensure embeddings are returned
+    )
+    return logits, embeddings
