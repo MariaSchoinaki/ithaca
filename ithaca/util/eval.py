@@ -603,20 +603,20 @@ def compute_attribution_saliency_maps_context_aware(
     if subregion_loss_kwargs is None:
         subregion_loss_kwargs = {}
 
-    # Get embeddings from the selected layer
     def get_context_aware_embeddings(forward_fn, text_char, text_word, layer):
         """
         Extract embeddings from a specified Transformer layer.
         """
-        _, _, _, layer_embeddings = forward_fn(
+        logits, embeddings = forward_fn(
             text_char=text_char,
             text_word=text_word,
             rngs={'dropout': rng},
             is_training=False
         )
-        if layer == -1:  # Use the last layer if no specific layer is provided
-            return layer_embeddings[-1]
-        return layer_embeddings[layer]
+        # Assuming `embeddings` contains a list of layer outputs
+        if isinstance(embeddings, list):
+            return embeddings[layer] if layer != -1 else embeddings[-1]
+        raise ValueError("Embeddings must be a list of layer outputs.")
 
     # Extract context-aware embeddings
     context_aware_embeddings_char = get_context_aware_embeddings(
@@ -639,7 +639,7 @@ def compute_attribution_saliency_maps_context_aware(
         gradient_subregion_char = jax.grad(
             saliency_loss_subregion, (1,))(
                 forward,
-                scaled_emb_char,
+                text_char_emb=scaled_emb_char,
                 text_word_emb=None,  # Context-aware embeddings are used, so word embeddings are ignored
                 padding=padding,
                 rng=rng,
@@ -649,7 +649,7 @@ def compute_attribution_saliency_maps_context_aware(
         gradient_date_char = jax.grad(
             saliency_loss_date, (1,))(
                 forward,
-                scaled_emb_char,
+                text_char_emb=scaled_emb_char,
                 text_word_emb=None,
                 padding=padding,
                 rng=rng)
@@ -693,7 +693,7 @@ def compute_attribution_saliency_maps_context_aware(
 
 def interpolate_inputs(baseline, input_emb, steps):
     """Generate interpolated inputs from baseline to actual input."""
-    alphas = np.linspace(0, 1, steps)
+    alphas = jnp.linspace(0, 1, steps).reshape(-1, *([1] * baseline.ndim))
     return [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
 
 
