@@ -133,6 +133,7 @@ class Model(nn.Module):
         dtype = jnp.bfloat16 if self.use_bfloat16 else jnp.float32
 
         # Transformer layers
+        intermediate_embeddings = []  # Store embeddings for specific layers
         for lyr in range(self.num_layers):
             x = bigbird.BigBirdBlock(
                 qkv_dim=self.qkv_dim,
@@ -148,17 +149,23 @@ class Model(nn.Module):
                 name=f'encoderblock_{lyr}',
             )(x, padding_mask=padding_mask)
 
-        # Normalize and store embeddings
+            # Save the embeddings for the current layer
+            intermediate_embeddings.append(x)
+
+        # Normalize the final layer
         x = common_layers.LayerNorm(dtype=dtype, name='encoder_norm')(x)
-        torso_output = x  # Save embeddings from the last layer
 
-        # Compute outputs
+        final_embeddings = x
+
+        # Compute outputs (logits)
         pred_date, logits_subregion, logits_mask, logits_nsp = self.compute_outputs(
-            x, torso_output, is_training)
-
+            x, final_embeddings, is_training)
+        
         if return_embeddings:
-            return (pred_date, logits_subregion, logits_mask, logits_nsp), torso_output
+            return (pred_date, logits_subregion, logits_mask, logits_nsp), intermediate_embeddings
         return pred_date, logits_subregion, logits_mask, logits_nsp
+
+
 
     def compute_outputs(self, x, torso_output, is_training):
         """Computes model outputs."""
@@ -187,13 +194,30 @@ class Model(nn.Module):
         return nn.Dense(out_dim)(x)
 
 
-def forward_fn_with_embeddings(model_instance, text_char, text_word, rngs, is_training):
-    """
-    Wrapper for the model's forward pass to return both logits and embeddings.
-    """
-    return model_instance(
-        text_char=text_char,
-        text_word=text_word,
-        is_training=is_training,
-        return_embeddings=True
-    )
+    def forward_fn_with_embeddings(model_instance, text_char, text_word, rngs, is_training, layer=-1):
+        """
+        Wrapper for the model's forward pass to return both logits and embeddings from a specific layer.
+        
+        Args:
+            model_instance: The model instance.
+            text_char: Character input indices.
+            text_word: Word input indices.
+            rngs: Random key for dropout.
+            is_training: Boolean indicating if the model is in training mode.
+            layer: Index of the layer to extract embeddings from (-1 for the last layer).
+            
+        Returns:
+            logits: Model predictions (logits).
+            embeddings: Embeddings from the specified layer.
+        """
+        outputs, embeddings = model_instance(
+            text_char=text_char,
+            text_word=text_word,
+            rngs=rngs,
+            is_training=is_training,
+            return_embeddings=True
+        )
+        # Select the embeddings from the desired layer
+        selected_embeddings = embeddings[layer]  # Default to the last layer if layer=-1
+        return outputs, selected_embeddings
+
