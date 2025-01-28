@@ -18,8 +18,6 @@ from typing import List, NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-
-from ithaca.models.model import forward_fn_with_embeddings
 from .text import idx_to_text
 from .text import text_to_idx
 from .text import text_to_word_idx
@@ -449,8 +447,8 @@ def compute_attribution_saliency_maps(text_char,
       text_word_onehot,
       text_len=text_len,
       alphabet=alphabet)
-  subregion_saliency = np.clip(grad_char, 0, 1) #isolating chars by remove + grad_word
-  
+  subregion_saliency = np.clip(grad_char + grad_word, 0, 1)
+
   # Generate saliency maps for dates
   input_grad_date_char = np.multiply(gradient_date_char,
                                      text_char_emb)  # grad x input
@@ -465,8 +463,7 @@ def compute_attribution_saliency_maps(text_char,
       text_word_onehot,
       text_len=text_len,
       alphabet=alphabet)
-  
-  date_saliency = np.clip(grad_word, 0, 1) #isolating chars by remove + grad_word
+  date_saliency = np.clip(grad_char + grad_word, 0, 1)
 
   return date_saliency, subregion_saliency
 
@@ -563,178 +560,3 @@ def sequential_restoration_saliency(text_str, text_len, forward, params,
         text=result_text[1:],
         pred_char_pos=pred_char_pos - 1,
         saliency_map=saliency_map[1:])
-    
-
-#-----------------------------------------------------------------------------------------------------------------------------------------
-def compute_attribution_saliency_maps_with_layer(
-        text_char,
-        text_word,
-        text_len,
-        padding,
-        forward_fn,
-        model_instance,
-        rng,
-        alphabet,
-        vocab_char_size,
-        vocab_word_size,
-        subregion_loss_kwargs=None,
-        selected_layer=-1  # Specify the layer for embeddings (default: last layer)
-):
-    """
-    Compute saliency maps for subregions and dates using embeddings from a specific layer.
-
-    Args:
-        selected_layer: Transformer layer for extracting embeddings (-1 for the last layer).
-    """
-    if subregion_loss_kwargs is None:
-        subregion_loss_kwargs = {}
-
-    # Get context-aware embeddings and logits from the selected layer
-    outputs, context_aware_embeddings = forward_fn_with_embeddings(
-        model_instance, text_char, text_word, rngs=rng, is_training=False, selected_layer=selected_layer
-    )
-
-    # Extract logits (if needed elsewhere)
-    pred_date, logits_subregion, _, _ = outputs
-
-    # Baseline: Zero embeddings for the selected layer
-    baseline_embeddings = jnp.zeros_like(context_aware_embeddings)
-
-    # Generate interpolated inputs between baseline and actual embeddings
-    interpolated_inputs = interpolate_inputs(baseline_embeddings, context_aware_embeddings, steps=9)
-
-    # Initialize accumulators for gradients
-    accumulated_gradient_subregion = jnp.zeros_like(context_aware_embeddings)
-    accumulated_gradient_date = jnp.zeros_like(context_aware_embeddings)
-
-    # Loop over interpolated inputs to compute gradients
-    for scaled_emb in interpolated_inputs:
-        # Gradients for subregion loss
-        gradient_subregion = jax.grad(
-            saliency_loss_subregion, (1,))(
-                forward_fn,
-                scaled_emb,
-                text_word_emb=None,  # Using context-aware embeddings
-                padding=padding,
-                rng=rng,
-                **subregion_loss_kwargs)
-
-        # Gradients for date loss
-        gradient_date = jax.grad(
-            saliency_loss_date, (1,))(
-                forward_fn,
-                scaled_emb,
-                text_word_emb=None,
-                padding=padding,
-                rng=rng)
-
-        # Accumulate gradients
-        accumulated_gradient_subregion += gradient_subregion
-        accumulated_gradient_date += gradient_date
-
-    # Average gradients over all steps
-    avg_gradient_subregion = accumulated_gradient_subregion / 9
-    avg_gradient_date = accumulated_gradient_date / 9
-
-    # Compute Integrated Gradients
-    integrated_gradients_subregion = (context_aware_embeddings - baseline_embeddings) * avg_gradient_subregion
-    integrated_gradients_date = (context_aware_embeddings - baseline_embeddings) * avg_gradient_date
-
-    # Convert to saliency map format
-    grad_subregion = grad_to_saliency_char(
-        integrated_gradients_subregion,
-        jax.nn.one_hot(text_char, vocab_char_size).astype(jnp.float32),
-        text_len=text_len,
-        alphabet=alphabet
-    )
-    grad_date = grad_to_saliency_char(
-        integrated_gradients_date,
-        jax.nn.one_hot(text_char, vocab_char_size).astype(jnp.float32),
-        text_len=text_len,
-        alphabet=alphabet
-    )
-
-    # Clip values and return saliency maps
-    subregion_saliency = np.clip(grad_subregion, 0, 1)
-    date_saliency = np.clip(grad_date, 0, 1)
-
-    return date_saliency, subregion_saliency
-
-def interpolate_inputs(baseline, input_emb, steps):
-    """Generate interpolated inputs from baseline to actual input."""
-    alphas = jnp.linspace(0, 1, steps).reshape(-1, *([1] * baseline.ndim))
-    return [(1 - alpha) * baseline + alpha * input_emb for alpha in alphas]
-
-
-from lime.lime_text import LimeTextExplainer
-import numpy as np
-
-def compute_lime_explanations(text, forward, params, alphabet, vocab_char_size, vocab_word_size):
-    """
-    Compute LIME explanations for the model's predictions.
-    
-    Args:
-        text (str): Input text to be explained.
-        forward (function): Forward function for the model.
-        params (dict): Model parameters.
-        alphabet: Alphabet instance for text processing.
-        vocab_char_size (int): Vocabulary size for characters.
-        vocab_word_size (int): Vocabulary size for words.
-
-    Returns:
-        dict: LIME explanations including feature importance and perturbed text.
-    """
-    # Initialize LIME Text Explainer
-    explainer = LimeTextExplainer(class_names=["Subregion", "Date"])
-
-    def predict_proba(texts):
-        """Wrapper to predict probabilities for LIME."""
-        # Convert each text to character and word embeddings
-        predictions = []
-        for t in texts:
-            # Text processing
-            text_char = text_to_idx(t, alphabet).reshape(1, -1)
-            text_word = text_to_word_idx(t, alphabet).reshape(1, -1)
-            padding = np.where(text_char > 0, 1, 0)
-            
-            # Get model predictions using the forward function
-            #  logits = forward(
-            #    text_char=text_char,
-            #    text_word=text_word,
-            #    text_char_onehot=None,
-            #    text_word_onehot=None,
-            #    params=params,
-            #    rngs={'dropout': None},
-            #    is_training=False,
-            # )
-
-            logits, embeddings = forward_fn_with_embeddings(text_char, text_word, rngs={'dropout': jax.random.PRNGKey(42)}, is_training=False)
-
-            # Assuming subregion logits and date logits are separate
-            date_logits = logits[0]
-            subregion_logits = logits[1]
-            
-            # Softmax to get probabilities
-            date_probs = softmax(np.array(date_logits))
-            subregion_probs = softmax(np.array(subregion_logits))
-            
-            # Combine probabilities for LIME (date and subregion)
-            combined_probs = np.concatenate([subregion_probs, date_probs], axis=-1)
-            predictions.append(combined_probs.flatten())
-        
-        return np.vstack(predictions)
-
-    # Generate LIME explanations for the text
-    exp = explainer.explain_instance(
-        text, predict_proba, num_features=10, labels=[0, 1]  # Adjust the number of features as needed
-    )
-    
-    # Extract LIME explanations
-    explanations = {
-        "features": exp.as_list(label=0),  # For Subregion prediction
-        "visualization": exp.as_pyplot_figure(label=0),  # Plot for Subregion
-        "date_features": exp.as_list(label=1),  # For Date prediction
-        "date_visualization": exp.as_pyplot_figure(label=1),  # Plot for Date
-    }
-    
-    return explanations

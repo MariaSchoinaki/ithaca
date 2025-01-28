@@ -210,9 +210,9 @@ def attribute(text, forward, params, alphabet, vocab_char_size, vocab_word_size,
   date_pred_probs = eval_util.softmax(date_logits[0])
 
   # Gradients for saliency maps
-  date_saliency, subregion_saliency = eval_util.compute_attribution_saliency_maps_with_layer(
+  date_saliency, subregion_saliency = eval_util.compute_attribution_saliency_maps(
       text_char, text_word, text_len, padding, forward, params, rng, alphabet,
-      vocab_char_size, vocab_word_size, 0)
+      vocab_char_size, vocab_word_size)
 
   # Skip start of sequence symbol (first char) for text and saliency maps:
   return AttributionResults(
