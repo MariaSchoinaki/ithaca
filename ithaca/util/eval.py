@@ -62,7 +62,7 @@ def grad_to_saliency_word(gradient_word, text_word_onehot, text_len, alphabet):
   saliency_word = saliency_word.copy()
   start_idx = None
   for i in range(text_len[0]):
-    if text_word[0, i] == alphabet.unk_idx:
+    if text_word[0, i] == alphabet.unk_idx or i == text_len[0] - 1: #so that it also covers the gradient of the last word
       if start_idx is not None:
         saliency_word[start_idx:i] = np.sum(saliency_word[start_idx:i])
       start_idx = None
