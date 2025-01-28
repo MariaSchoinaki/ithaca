@@ -463,7 +463,7 @@ def compute_attribution_saliency_maps(text_char,
       text_word_onehot,
       text_len=text_len,
       alphabet=alphabet)
-  date_saliency = np.clip(grad_char + grad_word, 0, 1)
+  date_saliency = np.clip(grad_word, 0, 1) #grad_char
 
   return date_saliency, subregion_saliency
 
