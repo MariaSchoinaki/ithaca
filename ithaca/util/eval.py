@@ -759,8 +759,8 @@ def compute_attribution_saliency_maps_intergrated_centroid(text_char,
       alphabet=alphabet
   )
   
-  subregion_saliency = np.clip(grad_char_subregion , 0, 1)#+ grad_word_subregion
-  date_saliency = np.clip(grad_char_date , 0, 1)#+ grad_word_date
+  subregion_saliency = np.clip(grad_word_subregion , 0, 1)#+ grad_char_subregion
+  date_saliency = np.clip(grad_word_date , 0, 1)#+ grad_char_date
   
   return date_saliency, subregion_saliency
 
