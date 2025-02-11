@@ -694,8 +694,8 @@ def compute_attribution_saliency_maps_intergrated_centroid(text_char,
   centroid_word_emb = jnp.mean(text_word_emb, axis=0, keepdims=True)
   
   # Generate interpolated inputs between centroid and actual input for both characters and words
-  interpolated_char_inputs = interpolate_inputs(centroid_char_emb, text_char_emb, 10)
-  interpolated_word_inputs = interpolate_inputs(centroid_word_emb, text_word_emb, 10)
+  interpolated_char_inputs = interpolate_inputs(centroid_char_emb, text_char_emb, 1)
+  interpolated_word_inputs = interpolate_inputs(centroid_word_emb, text_word_emb, 1)
   
   accumulated_gradient_subregion_char = jnp.zeros_like(text_char_emb)
   accumulated_gradient_subregion_word = jnp.zeros_like(text_word_emb)
@@ -724,10 +724,10 @@ def compute_attribution_saliency_maps_intergrated_centroid(text_char,
       accumulated_gradient_date_char += gradient_date_char
       accumulated_gradient_date_word += gradient_date_word
   
-  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 10
-  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 10
-  avg_gradient_date_char = accumulated_gradient_date_char / 10
-  avg_gradient_date_word = accumulated_gradient_date_word / 10
+  avg_gradient_subregion_char = accumulated_gradient_subregion_char / 1
+  avg_gradient_subregion_word = accumulated_gradient_subregion_word / 1
+  avg_gradient_date_char = accumulated_gradient_date_char / 1
+  avg_gradient_date_word = accumulated_gradient_date_word / 1
   
   integrated_gradients_subregion_char = (text_char_emb - centroid_char_emb) * avg_gradient_subregion_char
   integrated_gradients_subregion_word = (text_word_emb - centroid_word_emb) * avg_gradient_subregion_word
