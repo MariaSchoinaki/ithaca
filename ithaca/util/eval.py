@@ -679,7 +679,7 @@ def compute_attribution_saliency_maps_intergrated_centroid(text_char,
                                       vocab_char_size,
                                       vocab_word_size,
                                       subregion_loss_kwargs=None,
-                                      steps=10):  
+                                      steps=50):  
     """Compute character-based saliency maps for subregions and dates using Integrated Gradients with a sentence-level centroid baseline."""
     if subregion_loss_kwargs is None:
         subregion_loss_kwargs = {}
